@@ -20,16 +20,46 @@ exports.handler = function (event, context) {
 function getTapfinderSearchResults(event, context) {
   return tapfinder.search(event.term).then(
     function(matches) {
-      return loadBeers(matches);
+      var resultsPromises = [];
+
+      event.types.forEach(
+        function(type) {
+          resultsPromises.push(loadResults(type, matches));
+        }
+      );
+
+      return Promise.all(resultsPromises).then(
+        function (resultsPerType) {
+          return resultsPerType.reduce(
+            function(object, value) {
+              object[value[0]] = value[1];
+              return object;
+            }, {}
+          );
+        }
+      );
     }
   );
 }
 
-function loadBeers(matches) {
-  var tasks = _.map(matches.beers, tapfinder.loadBeer.bind(tapfinder));
-  return Promise.all(tasks).then(
+function loadResults(type, matches) {
+  var matchesForType = matches[type];
+  var matchLoader = tapfinderLoaderForType(type);
+  var tasks = _.map(matchesForType, matchLoader);
+  return(Promise.all(tasks)).then(
     function (results) {
-      return { beers: results };
+      return [type, results];
     }
   );
+}
+
+function tapfinderLoaderForType(type) {
+  switch(type) {
+    case "beers":
+      return tapfinder.loadBeer.bind(tapfinder);
+    case "bars":
+      return tapfinder.loadBar.bind(tapfinder);
+    default:
+      throw "Could not determine loader for type " + type;
+  }
 }
